@@ -1,3 +1,0 @@
-/home/ubuntu
-demo
- 10:00:52 up  1:07,  2 users,  load average: 0.91, 0.85, 0.43

@@ -1,7 +1,0 @@
-all:
-  hosts:
-    demo:
-      ansible_connection: theko2fi.multipass.multipass
-      ansible_host: 10.68.157.8
-      ansible_user: ubuntu
-

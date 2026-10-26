@@ -7,4 +7,4 @@
       ansible.builtin.authorized_key:
         user: ubuntu
         state: present
-        key: "{{ lookup('file', '.ssh/id_rsa.pub') }}"
+        key: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"

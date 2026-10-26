@@ -1,0 +1,137 @@
+# READ:
+# https://docs.ansible.com/projects/ansible/latest/reference_appendices/special_variables.html
+# https://www.youtube.com/watch?v=yB7oWJbMd3A
+
+---
+
+  # Disabling Cowsay: To disable this, run your playbook with the environment variable 
+  # ANSIBLE_NOCOWS=1, for example: ANSIBLE_NOCOWS=1 ansible-playbook site.yml.
+  # Customization: You can change the cow character using ANSIBLE_COW_SELECTION=random.
+
+- name: Lab VMs
+  hosts: localhost
+  connection: local
+ 
+  vars:
+    vm_name: demo
+
+  tasks:
+
+    - name: Destroy Multipass VM
+      theko2fi.multipass.multipass_vm:
+        name: "{{ vm_name }}"
+        state: absent
+        purge: true
+      tags: destroy
+
+    - name: Launch instance on bridge
+      ansible.builtin.shell: >
+        multipass info "{{ vm_name }}" >/dev/null 2>&1 ||
+        multipass launch --network br-ens33 --name {{ vm_name }} --cpus 2 --memory 2G --disk 8G
+      tags: deploy, create, bridge
+
+    - name: Create Multipass VM
+      theko2fi.multipass.multipass_vm:
+        name: "{{ vm_name }}"
+        cpus: 2
+        memory: 2G
+        disk: 8G
+        # image: # https://documentation.ubuntu.com/multipass/latest/how-to-guides/manage-instances/create-an-instance/#create-an-instance-with-a-specific-image
+        # networks:
+        #   - name: bridged
+        #     bridge: eth0
+        state: present # https://theko2fi.github.io/ansible-multipass-collection/branch/main/multipass_vm_module.html#parameter-state
+      register: vm
+      tags: deploy, create
+      
+    - name: Get VM IP
+      ansible.builtin.shell: >
+        multipass info "{{ vm_name }}" --format json  | jq ".info" -c -r
+      register: vm
+      tags: deploy, create, bridge, bridge_out
+
+    - name: Parse JSON and set fact
+      ansible.builtin.set_fact:
+        vm_ips: "{{ (vm.stdout | from_json)[vm_name].ipv4 if (vm.stdout | trim | length > 0) else [] }}"
+      tags: deploy, create, bridge, bridge_out
+
+    - name: Print IPs
+      debug:
+        msg: "{{ vm_ips }}"
+      tags: deploy, create, bridge, bridge_out
+
+    - name: Create .ssh directory
+      ansible.builtin.file:
+        path: "{{ (playbook_dir ~ '/../../.ssh') | realpath }}"
+        state: directory
+        mode: "0755"
+      tags: deploy, create, start
+
+    - name: Generate ssh keys
+      community.crypto.openssh_keypair:
+        path: ~/.ssh/id_rsa
+      register: ssh
+      tags: deploy, create, start
+
+    - name: Sync public key to workspace .ssh directory for Multipass transfer
+      ansible.builtin.copy:
+        src: ~/.ssh/id_rsa.pub
+        dest: "{{ (playbook_dir ~ '/../../.ssh/id_rsa.pub') | realpath }}"
+        unsafe_writes: true
+      tags: deploy, create, start
+
+    - name: Copy ssh keys to VM
+      theko2fi.multipass.multipass_vm_transfer_into:
+        name: "{{ vm_name }}"
+        src: "{{ (playbook_dir ~ '/../../.ssh/id_rsa.pub') | realpath }}"
+        dest: /tmp/id_rsa.pub
+      tags: deploy, create, start
+
+    - name: Add ssh keys to Ubuntu user
+      # connect: ssh ubuntu@192.168.1.40 -i ~/.ssh/id_rsa
+      theko2fi.multipass.multipass_vm_exec:
+        name: "{{ vm_name }}"
+        command: /bin/bash -c "cat /tmp/id_rsa.pub >> ~/.ssh/authorized_keys"
+      tags: deploy, create, start
+
+    - name: Update ansible inventory (inventory.ini)
+      when: vm_ips | length > 0
+      ansible.builtin.copy:
+        dest: "{{ (playbook_dir ~ '/../../inventory.ini') | realpath }}"
+        unsafe_writes: true
+        content: |
+          [all]
+          {{ vm_name }} ansible_host={{ vm_ips[1] | default(vm_ips[0]) }} primary_ip={{ vm_ips[1] | default(vm_ips[0]) }} secondary_ip={{ vm_ips[0] }}
+
+          [all:vars]
+          ansible_user=ubuntu
+          ansible_ssh_common_args='-o StrictHostKeyChecking=no'
+          ansible_ssh_private_key_file=~/.ssh/id_rsa
+        mode: "0644"
+      tags: deploy, create, start, bridge
+
+    - name: Update ansible inventory (inventory.yaml)
+      when: vm_ips | length > 0
+      ansible.builtin.copy:
+        dest: "{{ (playbook_dir ~ '/../../inventory.yaml') | realpath }}"
+        unsafe_writes: true
+        content: |
+          lab:
+            hosts:
+              {{ vm_ips[1] | default(vm_ips[0]) }}:
+                primary_ip: {{ vm_ips[1] | default(vm_ips[0]) }}
+                secondary_ip: {{ vm_ips[0] }}
+          {{ vm_name }}:
+            children:
+              lab:
+          all:
+            vars:
+              ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+              ansible_user: ubuntu
+              ansible_ssh_private_key_file: ~/.ssh/id_rsa
+        mode: "0644"
+      tags: deploy, create, start, bridge
+
+
+
+  

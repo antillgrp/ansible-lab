@@ -1,21 +1,4 @@
 # include .env
-# export
-
-export AWS_ACCESS_KEY_ID := test
-export AWS_SECRET_ACCESS_KEY := test
-export AWS_DEFAULT_REGION := us-east-1
-export AWS_STS_ENDPOINT := http://localhost:4566
-
-dkcleanup:
-	@echo "Pruning all unused Docker containers, images, networks, and volumes..."
-	# Stop all running containers first (if not handled by docker-compose down)
-	-docker stop $(shell docker ps -aq)
-	# Run system prune with -a (all unused images, not just dangling) and --volumes
-	docker system prune -a --volumes -f
-	@echo "Docker system cleanup complete."
-
-dkcomposeup:
-	docker compose up -d
 
 #### ANSIBLE ####
 
@@ -29,34 +12,27 @@ export ANSIBLE_NOCOWS := 1
 
 # export ANSIBLE_DISPLAY_OK_HOSTS := false
 
+deps:
+	-sudo apt-get update
+	sudo apt-get install -y python3 python3-pip python3-venv pipx jq
+	@command -v multipass >/dev/null 2>&1 || sudo snap install multipass
+	pipx ensurepath
+	@command -v ansible >/dev/null 2>&1 || pipx install --include-deps ansible
+
 ansible_reqs:
-	@ansible-galaxy install -r requirements.yaml
-	@ansible-galaxy collection install community.aws --upgrade
-	@ansible-galaxy collection install amazon.aws --upgrade
+	@ansible-galaxy install -r src/00_reqs/00_requirements.yaml
 
-aws_deploy:
-	@ansible-playbook -v aws_ansible.yaml
+infra_create:
+	@ansible-playbook -vvvvvv src/10_infra/00_vms.yaml -t "create"
+	@ansible-playbook -v src/10_infra/00_vms.yaml -t "bridge"
+	@ansible-playbook -v src/10_infra/10_copy_ssh_key.yaml
 
-aws_ssh:
-	@ansible-playbook -v aws_ansible_ssh.yaml  
-
-create:
-	@ansible-playbook -vvvvvv vms.yaml -t "create"
-
-start:
-	@ansible-playbook -vvvvvv vms.yaml -t "start"
-
-destroy:
-	@ansible-playbook -v vms.yaml -t "destroy"
+infra_destroy:
+	@ansible-playbook -v src/10_infra/00_vms.yaml -t "bridge_out"
+	@ansible-playbook -v src/10_infra/00_vms.yaml -t "destroy"
 
 deploy:
-	@ansible-playbook -v vms.yaml -t "deploy"
-
-bridge:
-	@ansible-playbook -v vms.yaml -t "bridge"
-
-bridge_out:
-	@ansible-playbook -v vms.yaml -t "bridge_out"
+	@ansible-playbook -v src/10_infra/00_vms.yaml -t "deploy"
 
 wpfacts:
 	@ansible-playbook -vvvvvv -i inventory.ini src/wordpress.yaml -t "facts"
@@ -65,10 +41,10 @@ wpsetup:
 	@ansible-playbook -v -i inventory.ini src/wordpress.yaml --skip-tags "facts"
 
 rancher_init:
-    sudo docker run -d --privileged --restart=unless-stopped -p 8080:80 -p 8443:443 --name rancher rancher/rancher:latest
+	sudo docker run -d --privileged --restart=unless-stopped -p 8080:80 -p 8443:443 --name rancher rancher/rancher:latest
 
 rancher_bootstrap_pass:
-    docker logs  rancher  2>&1 | grep "Bootstrap Password:"
+	docker logs  rancher  2>&1 | grep "Bootstrap Password:"
 	# 2026/02/14 17:49:03 [INFO] Bootstrap Password: xtk8mbbsw82hhhz2w47qhmx47fg9vcln4glhxrp6k7d2ntbzh7pmmk [gvjqGGqGV7dXAR9A]
 
 # A new API Key has been created

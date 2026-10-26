@@ -1,0 +1,10 @@
+---
+- hosts: all
+  become: true
+
+  tasks:
+    - name: Copy SSH public key to instances
+      ansible.builtin.authorized_key:
+        user: ubuntu
+        state: present
+        key: "{{ lookup('file', '.ssh/id_rsa.pub') }}"

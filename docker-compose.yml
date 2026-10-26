@@ -1,0 +1,38 @@
+version: "3.8"
+
+services:
+  localstack:
+    container_name: "localstack-test-test"
+    image: localstack/localstack-pro:latest
+    ports:
+      - "4566:4566" # Port that is used for LocalStack services emulation
+      - "8080:8080" # # Expose the LocalStack Web UI port (optional)
+      - "4571:4571"
+    environment:
+     # Enable verbose logging
+      - DEBUG=1
+      # Alternatively, use LS_LOG for more granular control (e.g., 'trace' for detailed request/response logs)
+      # - LS_LOG=trace
+      # Specify the services to load
+      - AWS_DEFAULT_REGION=eu-west-1
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - SERVICES=iam,ec2,s3
+      # Recommended endpoint for host-based S3 bucket URLs
+      - LOCALSTACK_ENDPOINT=http://localhost.localstack.cloud:4566
+      # localstack auth set-token ls-BOhA0435-pUwe-naGU-conA-5030qIZO5a28
+      # aws s3 mb s3://bucket1 --endpoint-url=http://localhost.localstack.cloud:4566
+      - LOCALSTACK_AUTH_TOKEN=ls-BOhA0435-pUwe-naGU-conA-5030qIZO5a28
+      - EC2_VM_MANAGER=docker
+      # aws configure
+      # AWS Access Key ID: test
+      # AWS Secret Access Key: test
+      # Default region name: us-east-1
+      # Default output format: json
+      # - LAMBDA_EXECUTOR=${LAMBDA_EXECUTOR-docker}
+    volumes:
+      # Mounts the Docker socket, necessary for some services like Lambda
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      - "./.localstack/ready.d:/etc/localstack/init/ready.d"
+      # Persist data to a local volume (Pro feature for full persistence)
+      - "./.localstack/data:/var/lib/localstack"

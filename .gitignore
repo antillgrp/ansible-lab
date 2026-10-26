@@ -1,0 +1,21 @@
+.env/
+.ssh/
+inventory.ini
+*.bak
+# Ansible Vault password file: prevents Git from committing secrets to remote repos.
+# Note:
+#  - .gitignore only affects Git tracking (prevents remote commits).
+#  - AI tools run locally as your OS user (toor, UID 1000 - non-root):
+#    * Passive indexing is scoped only to the open workspace.
+#    * Active AI agent tools inherit your exact OS permissions: they can read any file
+#      accessible to user 'toor' (including outside workspace), but cannot access root-only
+#      files (/etc/shadow, /root/) or other users' restricted files.
+# Best practices:
+#  1. Restrict filesystem permissions (chmod 600 .vault_pass) so only your OS user can access it.
+#  2. Store secrets outside the workspace (e.g. ~/.vault_pass) to avoid workspace indexing.
+#  3. Keyring variant (Recommended - 0 plaintext files on disk):
+#     Store encrypted in OS keyring (`keyring set ansible vault_pass`) and point vault_password_file
+#     to an executable script (`keyring get ansible vault_pass`).
+.vault_pass
+
+.localstack/

@@ -1,0 +1,296 @@
+---
+- name: Wordpress Install
+  #hosts: all
+  hosts: 
+    - demo
+  become: true
+  gather_facts: true # it's done by default 
+
+  # Disabling Cowsay: To disable this, run your playbook with the environment variable ANSIBLE_NOCOWS=1, for example: ANSIBLE_NOCOWS=1 ansible-playbook site.yml.
+  # Customization: You can change the cow character using ANSIBLE_COW_SELECTION=random.
+  
+  #  vars:
+  #    mysql_root_password: mypassword 
+  #    wordpress_user: wordpress
+  #    wordpress_password: mywordpress_pass
+  #    wordpress_db_name: wp_db
+
+  vars_files:
+    - variables.yaml
+
+  tasks:
+  
+    - name: Display all facts known for a host
+      ansible.builtin.debug:
+        var: ansible_facts
+        # msg: "The operating system is {{ ansible_facts['os_family'] }}"
+        # msg: "{{ ansible_facts | to_nice_json }}"
+        # ansible demo -m setup -i inventory.ini | grep -A100000 "ansible_facts" 
+      run_once: true # Optional: run on the first host only for a single output
+      tags: facts  # --skip-tags tag1,tag2
+
+    - name: Update Packages
+      ansible.builtin.apt:
+        update_cache: yes
+        upgrade: dist
+      no_log: true 
+
+    - name: Install Apache2
+      ansible.builtin.apt:
+        name: apache2
+        state: present
+      no_log: true 
+
+    - name: Start Apache service
+      ansible.builtin.systemd_service:
+        name: apache2 
+        state: started
+        enabled: true
+      no_log: true
+    
+    - name: Install MariaDB
+      ansible.builtin.apt:
+        name:
+          - mariadb-server
+          - mariadb-client
+          - python3-pymysql
+        state: present
+      no_log: true
+
+    - name: Start MariaDB service
+      ansible.builtin.systemd_service:
+        name: mariadb 
+        state: started
+        enabled: true
+      no_log: true
+      # sudo ss -tap | grep mysql
+      # sudo systemctl status mysql 
+      # ps aux | grep mysql
+      
+    # - import_tasks: python.yaml
+
+    - name: Check if variables mysql_root_password and mysql_socket are set
+      debug:
+        msg: >
+          ERROR!! make sure variables mysql_root_password and mysql_socket are set. 
+      when: not mysql_root_password or not mysql_socket
+
+    - name: Check if root password has been changed already
+      shell: >
+        mysql -u root
+        -p'{{ mysql_root_password }}'
+        -h localhost
+        -S {{ mysql_socket }}
+        -e "quit"
+      changed_when: false
+      ignore_errors: true
+      register: mysql_root_password_verified
+      
+    - name: Set MariaDB root password for the first time (root@localhost)
+      # Run only if pass has not been changed 
+      when: mysql_root_password_verified.rc != 0
+      # https://docs.ansible.com/projects/ansible/latest/collections/community/mysql/mysql_user_module.html#requirements
+      community.mysql.mysql_user:
+        # Credentials for an administrative user to connect to the database server and perform the changes
+        login_user: root 
+        login_password: "" # originally empty
+        # The name of the user or role to manage (required).
+        name: root
+        password: "{{ mysql_root_password }}"
+        host: localhost
+        login_unix_socket: "{{ mysql_socket }}"
+        priv: "*.*:ALL,GRANT"
+        state: present
+        # WARNINGS FIX
+        column_case_sensitive: false
+      
+    - name: Remove anonymous MariaDB users
+      when: mysql_root_password_verified.rc == 0
+      community.mysql.mysql_user:
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+        login_unix_socket: "{{ mysql_socket }}"
+        name: ""
+        host_all: yes
+        state: absent
+      
+    - name: Disallow root login remotely
+      when: mysql_root_password_verified.rc == 0
+      community.mysql.mysql_user:
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+        login_unix_socket: "{{ mysql_socket }}"
+        name: root
+        host: "{{ item }}"
+        state: absent
+      loop:
+        - '::1'
+        - '%'
+      # with_items:
+      #   # Remove root users from any host except localhost and loopback addresses
+      #   - "%"
+      #   - "::1"
+      #   # Note: 'localhost' and '127.0.0.1' should be handled separately and kept
+
+    # - name: Remove test database
+    #   community.mysql.mysql_db:
+    #     login_user: root
+    #     login_password: "{{ mysql_root_password }}"
+    #     name: test
+    #     state: absent
+
+    - name: Reload privilege tables
+      when: mysql_root_password_verified.rc == 0
+      ansible.builtin.command: >
+        mysql -u root -p"{{ mysql_root_password }}" -e "FLUSH PRIVILEGES;"
+
+    - name: Add wordpress database
+      when: mysql_root_password_verified.rc == 0
+      community.mysql.mysql_db:
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+        name: "{{ wordpress_db_name }}"
+        state: present
+
+    - name: Set wordpress user and password
+      when: mysql_root_password_verified.rc == 0
+      community.mysql.mysql_user:
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+        host: localhost
+        name: "{{ wordpress_user }}"
+        password: "{{ wordpress_password }}"
+        priv: "{{ wordpress_db_name }}.*:ALL,GRANT"
+        state: present
+
+    - name: Install php and dependencies
+      ansible.builtin.apt:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - php 
+        - php-common
+        - php-mysql
+        - php-xml
+        - php-xmlrpc
+        - php-curl
+        - php-gd
+        - php-imagick
+        - php-cli
+        - php-dev
+        - php-dev
+        - php-imap
+        - php-mbstring
+        - php-opcache
+        - php-soap
+        - php-zip
+        - php-intl
+      no_log: true 
+
+    - name: Download wordpress
+      ansible.builtin.get_url:
+        url: https://wordpress.org/wordpress-6.6.1.tar.gz
+        dest: /tmp
+
+    - name: Extract wordpress 
+      ansible.builtin.unarchive:
+        src: /tmp/wordpress-6.9.1.tar.gz
+        dest: /var/www/html
+        remote_src: true
+
+    - name: Generate new wp-config 
+      ansible.builtin.copy:
+        remote_src: true
+        src: /var/www/html/wordpress/wp-config-sample.php 
+        dest: /var/www/html/wordpress/wp-config.php 
+
+    - name: Change wordpress permission 
+      ansible.builtin.file:
+        path: /var/www/html
+        state: directory
+        recurse: yes
+        owner: www-data
+        group: www-data
+        mode: '0755'
+
+    - name: Configure wp-config.php
+      ansible.builtin.lineinfile:
+        path: /var/www/html/wordpress/wp-config.php
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+      no_log: True
+      loop:
+        - { regexp: "database_name_here", line: "define('DB_NAME', '{{ wordpress_db_name }}');" }
+        - { regexp: "username_here", line: "define('DB_USER', '{{ wordpress_user }}');" }
+        - { regexp: "password_here", line: "define('DB_PASSWORD', '{{ wordpress_password }}');" }
+
+    - name: Add wordpress secret key generator
+      ansible.builtin.shell: |
+        curl -s https://api.wordpress.org/secret-key/1.1/salt/ >> /var/www/html/wordpress/wp-config.php
+
+    - name: Generate Wordpress apache conf 
+      ansible.builtin.copy:
+        remote_src: true
+        src: /etc/apache2/sites-available/000-default.conf 
+        dest: /etc/apache2/sites-available/wordpress.conf 
+
+    - name: Add wordpress DocumentRoot 
+      ansible.builtin.lineinfile:
+        path: /etc/apache2/sites-available/wordpress.conf 
+        regexp: "/var/www/html"
+        line: "        DocumentRoot /var/www/html/wordpress"
+  
+    - name: Enable wordpress site 
+      ansible.builtin.shell: |
+        a2ensite wordpress.conf
+        a2dissite 000-default.conf
+      args:
+        chdir: /etc/apache2/sites-available
+
+    - name: Restart Apache2 service 
+      ansible.builtin.systemd_service:
+        name: apache2 
+        state: restarted
+    
+    ##################################################################
+
+    # - name: Run multiple
+    #   ansible.builtin.shell: |
+    #     pwd      | tee -a log.txt
+    #     hostname | tee -a log.txt
+    #     uptime   | tee -a log.txt
+    #   register: shell_output
+    #   # args:
+    #   #   chdir: /home
+    #   #   creates: log.txt
+    #   tags: shell  # --skip-tags tag1,tag2
+
+    # # ansible.builtin.command 
+    # # Execute commands on targets.
+    # # ansible.builtin.raw 
+    # # Executes a low-down and dirty command.
+    # # ansible.builtin.script
+    # # Runs a local script on a remote node after transferring it.
+    # # ansible.windows.win_shell
+    # # Execute shell commands on target hosts.
+
+    # - name: Display the command output
+    #   ansible.builtin.debug:
+    #     var: shell_output.stdout_lines
+    #   run_once: true # Optional: run this task only once on the control node for a single consolidated view
+    #   tags: shell  # --skip-tags tag1,tag2
+
+    # # Alternative: use a local action to save output to a file on your control node
+    # - name: Save output to a local file
+    #   ansible.builtin.copy:
+    #     content: "{{ shell_output.stdout }}"
+    #     dest: "./output_{{ inventory_hostname }}.txt"
+    #   delegate_to: localhost
+    #   run_once: true
+    #   tags: shell  # --skip-tags tag1,tag2
+
+    # - name: secure wizard mariadb
+    #   # https://serverfault.com/a/1107296 also check https://forum.mikrotik.com/t/ansible-expect-module-like-prompt-response/172104/4
+    #   ansible.builtin.expect:
+    #     ...
+  

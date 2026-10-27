@@ -7,7 +7,8 @@
   notify: Start MariaDB
 
 - name: Ensure Python Dependencies
-  ansible.builtin.import_tasks: python.yaml
+  ansible.builtin.import_role:
+    name: python
 
 - name: Set MariaDB root password
   community.mysql.mysql_user:
@@ -16,6 +17,7 @@
     password: "{{ new_root_password }}"
     login_user: root
     login_password: ""
+    login_unix_socket: /var/run/mysqld/mysqld.sock
     priv: "*.*:ALL,GRANT"
     state: present
   ignore_errors: true
@@ -26,6 +28,7 @@
     host_all: yes
     login_user: root
     login_password: "{{ new_root_password }}"
+    login_unix_socket: /var/run/mysqld/mysqld.sock
     state: absent
 
 - name: Disallow root login remotely
@@ -34,6 +37,7 @@
     host: "{{ item }}"
     login_user: root
     login_password: "{{ new_root_password }}"
+    login_unix_socket: /var/run/mysqld/mysqld.sock
     state: absent
   loop:
     - "{{ ansible_hostname }}"
@@ -47,6 +51,7 @@
     state: absent
     login_user: root
     login_password: "{{ new_root_password }}"
+    login_unix_socket: /var/run/mysqld/mysqld.sock
 
 - name: Reload privilege tables
   ansible.builtin.command: mysql -u root -p"{{ new_root_password }}" -e "FLUSH PRIVILEGES;"

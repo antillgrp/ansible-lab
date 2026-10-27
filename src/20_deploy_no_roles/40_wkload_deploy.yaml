@@ -1,0 +1,216 @@
+---
+- name: Wordpress Install
+  hosts: 
+    - demo
+  become: true
+  gather_facts: true
+
+  vars_files:
+    - 30_variables.yaml
+
+  pre_tasks:
+
+    # - name: Display all facts known for a host
+    #   ansible.builtin.debug:
+    #     var: ansible_facts
+    #   run_once: true
+    #   tags: facts
+
+    - name: Update Packages
+      ansible.builtin.apt:
+        update_cache: yes
+        upgrade: dist
+      no_log: true 
+
+    - name: Check if variables mysql_root_password and mysql_socket are set
+      ansible.builtin.debug:
+        msg: >
+          ERROR!! make sure variables mysql_root_password and mysql_socket are set. 
+      when: not mysql_root_password or not mysql_socket
+
+    - name: Ensure Python Dependencies
+      ansible.builtin.import_tasks: 20_python.yaml
+
+    - name: Install php and dependencies
+      ansible.builtin.import_tasks: 10_php.yaml
+
+    - name: Download wordpress
+      ansible.builtin.get_url:
+        url: https://wordpress.org/wordpress-6.6.1.tar.gz
+        dest: /tmp
+
+    - name: Extract wordpress 
+      ansible.builtin.unarchive:
+        src: /tmp/wordpress-6.6.1.tar.gz
+        dest: /var/www/html
+        remote_src: true
+
+    - name: Change wordpress permission 
+      ansible.builtin.file:
+        path: /var/www/html
+        state: directory
+        recurse: yes
+        owner: www-data
+        group: www-data
+        mode: '0755'
+
+  tasks:
+
+    - name: Install Apache2
+      ansible.builtin.apt:
+        name: apache2
+        state: present
+      no_log: true 
+      notify: Start Apache service
+
+    - name: Install MariaDB
+      ansible.builtin.apt:
+        name:
+          - mariadb-server
+          - mariadb-client
+          - python3-pymysql
+        state: present
+      no_log: true
+      notify:
+        - Start MariaDB service
+        - Check if root password has been changed already
+        - Set MariaDB root password for the first time (root@localhost)
+        - Reload privilege tables
+
+    - name: Flush handlers to ensure database service is running
+      ansible.builtin.meta: flush_handlers
+
+    - name: Add wordpress database
+      community.mysql.mysql_db:
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+        login_unix_socket: "{{ mysql_socket }}"
+        name: "{{ wordpress_db_name }}"
+        state: present
+
+    - name: Set wordpress user and password
+      community.mysql.mysql_user:
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+        login_unix_socket: "{{ mysql_socket }}"
+        host: localhost
+        name: "{{ wordpress_user }}"
+        password: "{{ wordpress_password }}"
+        priv: "{{ wordpress_db_name }}.*:ALL,GRANT"
+        state: present
+
+    - name: Generate new wp-config 
+      ansible.builtin.copy:
+        remote_src: true
+        src: /var/www/html/wordpress/wp-config-sample.php 
+        dest: /var/www/html/wordpress/wp-config.php 
+
+    - name: Configure wp-config.php
+      ansible.builtin.lineinfile:
+        path: /var/www/html/wordpress/wp-config.php
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+      no_log: true
+      loop:
+        - { regexp: "database_name_here", line: "define('DB_NAME', '{{ wordpress_db_name }}');" }
+        - { regexp: "username_here", line: "define('DB_USER', '{{ wordpress_user }}');" }
+        - { regexp: "password_here", line: "define('DB_PASSWORD', '{{ wordpress_password }}');" }
+
+    - name: Add wordpress secret key generator
+      ansible.builtin.shell: |
+        curl -s https://api.wordpress.org/secret-key/1.1/salt/ >> /var/www/html/wordpress/wp-config.php
+
+    - name: Generate Wordpress apache conf 
+      ansible.builtin.copy:
+        remote_src: true
+        src: /etc/apache2/sites-available/000-default.conf 
+        dest: /etc/apache2/sites-available/wordpress.conf 
+
+    - name: Add wordpress DocumentRoot 
+      ansible.builtin.lineinfile:
+        path: /etc/apache2/sites-available/wordpress.conf 
+        regexp: "/var/www/html"
+        line: "        DocumentRoot /var/www/html/wordpress"
+  
+    - name: Enable wordpress site 
+      ansible.builtin.shell: |
+        a2ensite wordpress.conf
+        a2dissite 000-default.conf
+      args:
+        chdir: /etc/apache2/sites-available
+      notify: Restart Apache2 service
+
+  post_tasks:
+
+    - name: Remove anonymous MariaDB users
+      community.mysql.mysql_user:
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+        login_unix_socket: "{{ mysql_socket }}"
+        name: ""
+        host_all: yes
+        state: absent
+      
+    - name: Disallow root login remotely
+      community.mysql.mysql_user:
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+        login_unix_socket: "{{ mysql_socket }}"
+        name: root
+        host: "{{ item }}"
+        state: absent
+      loop:
+        - '::1'
+        - '%'
+
+    - name: Display WordPress site URL
+      ansible.builtin.debug:
+        msg: "WordPress site URL: http://{{ ansible_host | default(ansible_default_ipv4.address) }}/"
+
+  handlers:
+
+    - name: Start Apache service
+      ansible.builtin.systemd_service:
+        name: apache2 
+        state: started
+        enabled: true
+
+    - name: Start MariaDB service
+      ansible.builtin.systemd_service:
+        name: mariadb 
+        state: started
+        enabled: true
+
+    - name: Check if root password has been changed already
+      ansible.builtin.shell: >
+        mysql -u root
+        -p'{{ mysql_root_password }}'
+        -h localhost
+        -S {{ mysql_socket }}
+        -e "quit"
+      changed_when: false
+      ignore_errors: true
+      register: mysql_root_password_verified
+
+    - name: Set MariaDB root password for the first time (root@localhost)
+      when: mysql_root_password_verified is defined and mysql_root_password_verified.rc != 0
+      community.mysql.mysql_user:
+        login_user: root 
+        login_password: ""
+        name: root
+        password: "{{ mysql_root_password }}"
+        host: localhost
+        login_unix_socket: "{{ mysql_socket }}"
+        priv: "*.*:ALL,GRANT"
+        state: present
+        column_case_sensitive: false
+
+    - name: Reload privilege tables
+      ansible.builtin.command: >
+        mysql -u root -p"{{ mysql_root_password }}" -e "FLUSH PRIVILEGES;"
+
+    - name: Restart Apache2 service 
+      ansible.builtin.systemd_service:
+        name: apache2 
+        state: restarted
+

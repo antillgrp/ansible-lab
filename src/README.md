@@ -12,11 +12,11 @@ ansible-playbook -c local src/00_facts.yaml
 ```
 *(Note: If line 4 is set to `connection: localhost`, either pass `-c local` or change line 4 to `connection: local`.)*
 
-### 2. `01_hello.yaml`
+### 2. `10_hello.yaml`
 Prints a greeting message on `localhost` using the `user` variable.
 
 ```bash
-ansible-playbook src/01_hello.yaml -e "user=toor"
+ansible-playbook src/10_hello.yaml -e "user=toor"
 ```
 
 ---

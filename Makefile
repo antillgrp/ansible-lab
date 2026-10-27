@@ -31,14 +31,17 @@ infra_destroy:
 	@ansible-playbook -v src/10_infra/00_vms.yaml -t "bridge_out"
 	@ansible-playbook -v src/10_infra/00_vms.yaml -t "destroy"
 
-deploy:
-	@ansible-playbook -v src/10_infra/00_vms.yaml -t "deploy"
+wkload_deploy_no_roles:
+	@ansible-playbook -v -i inventory.ini src/20_deploy_no_roles/40_wkload_deploy.yaml
+
+wkload_deploy_roles:
+	@ansible-playbook -v -i inventory.ini src/30_deploy_with_roles/10_wordpressv2.yaml
 
 wpfacts:
-	@ansible-playbook -vvvvvv -i inventory.ini src/wordpress.yaml -t "facts"
+	@ansible-playbook -vvvvvv -i inventory.ini src/20_deploy_no_roles/40_wkload_deploy.yaml -t "facts"
 
 wpsetup:
-	@ansible-playbook -v -i inventory.ini src/wordpress.yaml --skip-tags "facts"
+	@ansible-playbook -v -i inventory.ini src/20_deploy_no_roles/40_wkload_deploy.yaml --skip-tags "facts"
 
 rancher_init:
 	sudo docker run -d --privileged --restart=unless-stopped -p 8080:80 -p 8443:443 --name rancher rancher/rancher:latest

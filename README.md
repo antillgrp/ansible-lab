@@ -16,7 +16,7 @@ This repository contains a hands-on Ansible lab covering basic playbooks, Multip
 └── src/                               # Playbooks, requirements, and roles
     ├── README.md
     ├── 00_facts.yaml                  # Gather & print localhost facts
-    ├── 01_hello.yaml                  # Basic Hello World playbook with variables
+    ├── 10_hello.yaml                  # Basic Hello World playbook with variables
     ├── 00_reqs/                       # Ansible Galaxy collection requirements
     ├── 10_infra/                      # Multipass VM lifecycle, SSH key setup & dynamic inventory
     ├── 20_deploy_no_roles/            # Monolithic WordPress + MariaDB playbooks
@@ -25,7 +25,7 @@ This repository contains a hands-on Ansible lab covering basic playbooks, Multip
 ```
 
 Each folder under [`src/`](./src/README.md) has its own `README.md` with detailed usage instructions:
-- [`src/README.md`](./src/README.md) — Overview & introductory playbooks (`00_facts.yaml`, `01_hello.yaml`)
+- [`src/README.md`](./src/README.md) — Overview & introductory playbooks (`00_facts.yaml`, `10_hello.yaml`)
 - [`src/00_reqs/README.md`](./src/00_reqs/README.md) — Installing Ansible Galaxy collections
 - [`src/10_infra/README.md`](./src/10_infra/README.md) — Creating/destroying Multipass VMs and configuring SSH
 - [`src/20_deploy_no_roles/README.md`](./src/20_deploy_no_roles/README.md) — Deploying WordPress without roles
@@ -70,7 +70,7 @@ Verify your local Ansible setup before provisioning VMs:
 ansible-playbook -c local src/00_facts.yaml
 
 # Print a greeting using an extra variable
-ansible-playbook src/01_hello.yaml -e "user=toor"
+ansible-playbook src/10_hello.yaml -e "user=toor"
 ```
 
 ### Step 3: Provision the Lab VM & Configure SSH (`10_infra`)
@@ -83,8 +83,7 @@ make infra_create
 Or run the individual [`src/10_infra/`](./src/10_infra/README.md) playbooks and targets directly:
 ```bash
 # Full VM deployment (launch on bridge, fetch IP, generate & copy SSH keys, write inventory.ini)
-make deploy
-# or: ansible-playbook src/10_infra/00_vms.yaml -t "deploy"
+ansible-playbook src/10_infra/00_vms.yaml -t "deploy"
 
 # Display the VM's current IPs
 make bridge_out
@@ -100,27 +99,33 @@ ansible demo -m ping -i inventory.ini
 ```
 
 ### Step 4A: Deploy WordPress Without Roles (`20_deploy_no_roles`)
-Run the standalone WordPress + MariaDB + Apache + PHP playbook [`src/20_deploy_no_roles/04_wordpress.yaml`](./src/20_deploy_no_roles/04_wordpress.yaml):
+Run the standalone WordPress + MariaDB + Apache + PHP workload via `make`:
 
 ```bash
-# Check target host facts only
-ansible-playbook -i inventory.ini src/20_deploy_no_roles/04_wordpress.yaml -e "@src/20_deploy_no_roles/03_variables.yaml" -t "facts"
+make wkload_deploy_no_roles
+# or directly:
+ansible-playbook -i inventory.ini src/20_deploy_no_roles/40_wkload_deploy.yaml
+```
 
-# Run full WordPress setup (skipping facts debug output)
-ansible-playbook -i inventory.ini src/20_deploy_no_roles/04_wordpress.yaml -e "@src/20_deploy_no_roles/03_variables.yaml" --skip-tags "facts"
+To run facts or skip facts selectively:
+```bash
+make wpfacts
+make wpsetup
 ```
 
 ### Step 4B: Deploy WordPress With Roles (`roles` / `30_deploy_with_roles`)
-Deploy using the modular `wordpress` and `mariadb` roles located in [`src/roles/`](./src/roles/README.md):
+Deploy using the modular roles (`python`, `mariadb`, `wordpress`) located in [`src/roles/`](./src/roles/README.md):
 
 ```bash
-ANSIBLE_ROLES_PATH=src/roles ansible-playbook -i inventory.ini src/20_deploy_no_roles/05_wordpressv2.yaml
+make wkload_deploy_roles
+# or directly:
+ansible-playbook -i inventory.ini src/30_deploy_with_roles/10_wordpressv2.yaml
 ```
 
 Once deployed, open `http://<demo_vm_ip>` in your browser to complete the WordPress setup wizard.
 
 ### Step 5: Destroy the Lab Environment
-When finished, tear down and purge the Multipass VM (running `bridge_out` and `destroy`):
+When finished, tear down and purge the Multipass VM and empty the inventory files:
 
 ```bash
 make infra_destroy

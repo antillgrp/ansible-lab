@@ -26,10 +26,7 @@
     - php-imagick
     - php-cli
     - php-dev
-    - php-dev
-    - php-imap
     - php-mbstring
-    - php-opcache
     - php-soap
     - php-zip
     - php-intl
@@ -38,14 +35,15 @@
   ansible.builtin.import_role:
     name: mariadb
   vars:
-    new_root_password: "{{ mariadb_root_password }}"
+    new_root_password: "{{ mariadb_root_password | default(mysql_root_password) }}"
 
 - name: Add wordpress database
   community.mysql.mysql_db:
     name: "{{ wordpress_db_name }}"
     state: present
     login_user: root
-    login_password: "{{ mariadb_root_password }}"
+    login_password: "{{ mariadb_root_password | default(mysql_root_password) }}"
+    login_unix_socket: /var/run/mysqld/mysqld.sock
 
 - name: Set wordpress user and password
   community.mysql.mysql_user:
@@ -53,7 +51,8 @@
     host: localhost
     password: "{{ wordpress_password }}"
     login_user: root
-    login_password: "{{ mariadb_root_password }}"
+    login_password: "{{ mariadb_root_password | default(mysql_root_password) }}"
+    login_unix_socket: /var/run/mysqld/mysqld.sock
     priv: "{{ wordpress_db_name }}.*:ALL,GRANT"
     state: present
 
@@ -118,4 +117,8 @@
     chdir: /etc/apache2/sites-available
   notify: 
     - Restart apache
+
+- name: Display WordPress site URL
+  ansible.builtin.debug:
+    msg: "WordPress site URL: http://{{ ansible_host | default(ansible_default_ipv4.address) }}/"
 

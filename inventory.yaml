@@ -1,8 +1,8 @@
 lab:
   hosts:
-    192.168.1.210:
-      primary_ip: 192.168.1.210
-      secondary_ip: 10.68.157.238
+    192.168.1.213:
+      primary_ip: 192.168.1.213
+      secondary_ip: 10.68.157.208
 demo:
   children:
     lab:

@@ -1,20 +1,30 @@
 # `30_deploy_with_roles` — WordPress Deployment (With Roles)
 
-This folder is intended for playbooks that deploy the stack using the reusable roles in [`../roles/`](../roles/README.md) (`mariadb` and `wordpress`).
+This folder contains playbooks that deploy the stack using reusable roles from [`../roles/`](../roles/README.md) (`python`, `mariadb`, and `wordpress`).
+
+## Files
+
+- **`10_wordpressv2.yaml`** — Deploys WordPress on host `demo` using the `wordpress` role (which automatically imports `mariadb` and `python`).
 
 ## Usage
 
-For example, if moving or creating a role-based playbook here (such as `05_wordpressv2.yaml`), run it from the repository root (`/home/toor/DEVOPS_DEV/ansible-lab`) with `ANSIBLE_ROLES_PATH=src/roles`:
+Run from the repository root (`/home/toor/DEVOPS_DEV/ansible-lab`):
 
+### 1. Using `make`
 ```bash
-ANSIBLE_ROLES_PATH=src/roles ansible-playbook -i inventory.ini src/30_deploy_with_roles/<playbook>.yaml
+make wkload_deploy_roles
 ```
 
-### Example Playbook Structure
+### 2. Using `ansible-playbook` directly
+```bash
+ansible-playbook -i inventory.ini src/30_deploy_with_roles/10_wordpressv2.yaml
+```
+
+### Playbook Structure
 
 ```yaml
 ---
-- name: Wordpress Install with Roles
+- name: Wordpress Install V2
   hosts: demo
   become: true
 
@@ -22,6 +32,7 @@ ANSIBLE_ROLES_PATH=src/roles ansible-playbook -i inventory.ini src/30_deploy_wit
     - role: wordpress
       vars:
         mariadb_root_password: mypassword
+        mysql_root_password: mypassword
         wordpress_user: wordpress_user
         wordpress_db_name: wp_db
         wordpress_password: mywppassword

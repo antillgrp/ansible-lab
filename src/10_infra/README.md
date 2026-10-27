@@ -31,9 +31,9 @@ Run from the repository root (`/home/toor/DEVOPS_DEV/ansible-lab`):
   ansible-playbook src/10_infra/00_vms.yaml -t "bridge_out"
   ```
 
-- **Configure SSH keys and update `inventory.ini` for a running VM:**
+- **Configure SSH keys and update inventories for a running VM:**
   ```bash
-  ansible-playbook src/10_infra/00_vms.yaml -t "start"
+  ansible-playbook src/10_infra/00_vms.yaml -t "create"
   ```
 
 - **Destroy and purge the VM (`make infra_destroy` runs `bridge_out` and `destroy`):**

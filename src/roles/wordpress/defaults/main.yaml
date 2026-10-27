@@ -1,4 +1,7 @@
+---
 mariadb_root_password: CHANGEME
+mysql_root_password: "{{ mariadb_root_password }}"
 wordpress_user: wordpress 
 wordpress_password: CHANGEME 
 wordpress_db_name: wordpress_db
+

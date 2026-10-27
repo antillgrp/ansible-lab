@@ -1,0 +1,49 @@
+---
+- name: Workload Deploy (With Roles)
+  hosts: demo
+  become: true
+  gather_facts: true
+
+  vars:
+    mariadb_root_password: mypassword
+    mysql_root_password: mypassword
+    mysql_socket: /var/run/mysqld/mysqld.sock
+    wordpress_user: wp_admin
+    wordpress_db_name: wp_db
+    wordpress_password: wp_password
+
+  pre_tasks:
+
+    - name: PRE_TASK Update Packages
+      ansible.builtin.apt:
+        update_cache: yes
+        upgrade: dist
+      no_log: true
+
+    - name: PRE_TASK Check if variables mysql_root_password and mysql_socket are set
+      ansible.builtin.debug:
+        msg: >
+          ERROR!! make sure variables mysql_root_password and mysql_socket are set.
+      when: not (mariadb_root_password | default(mysql_root_password)) or not mysql_socket
+
+  roles:
+    - role: wordpress
+
+  post_tasks:
+
+    - name: POST_TASK Test WordPress health endpoint (POST /wp-json/vigilant/v1/health)
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host | default(ansible_default_ipv4.address) }}/wp-json/vigilant/v1/health"
+        method: POST
+        status_code: 200
+        return_content: true
+      register: wp_health_check
+
+    - name: POST_TASK Display WordPress site URL
+      ansible.builtin.debug:
+        msg:
+          - "WordPress site URL: http://{{ ansible_host | default(ansible_default_ipv4.address) }}/"
+          - "Health endpoint: http://{{ ansible_host | default(ansible_default_ipv4.address) }}/wp-json/vigilant/v1/health"
+          - "Health check status: {{ wp_health_check.json.status | default('ok') }} ({{ wp_health_check.json.health | default('healthy') }})"
+          - "Health check payload: {{ wp_health_check.json | default({}) }}"
+

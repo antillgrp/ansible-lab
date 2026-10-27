@@ -1,4 +1,4 @@
-- name: Start MariaDB
+- name: HANDLER Start MariaDB
   ansible.builtin.systemd_service:
     name: mariadb 
     state: started

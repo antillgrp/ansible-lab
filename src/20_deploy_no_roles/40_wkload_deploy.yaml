@@ -10,42 +10,42 @@
 
   pre_tasks:
 
-    # - name: Display all facts known for a host
-    #   ansible.builtin.debug:
-    #     var: ansible_facts
-    #   run_once: true
-    #   tags: facts
+    - name: PRE_TASK Display all facts known for a host
+      ansible.builtin.debug:
+        var: ansible_facts
+      run_once: true
+      tags: facts
 
-    - name: Update Packages
+    - name: PRE_TASK Update Packages
       ansible.builtin.apt:
         update_cache: yes
         upgrade: dist
       no_log: true 
 
-    - name: Check if variables mysql_root_password and mysql_socket are set
+    - name: PRE_TASK Check if variables mysql_root_password and mysql_socket are set
       ansible.builtin.debug:
         msg: >
           ERROR!! make sure variables mysql_root_password and mysql_socket are set. 
       when: not mysql_root_password or not mysql_socket
 
-    - name: Ensure Python Dependencies
+    - name: PRE_TASK Ensure Python Dependencies
       ansible.builtin.import_tasks: 20_python.yaml
 
-    - name: Install php and dependencies
+    - name: PRE_TASK Install php and dependencies
       ansible.builtin.import_tasks: 10_php.yaml
 
-    - name: Download wordpress
+    - name: PRE_TASK Download wordpress
       ansible.builtin.get_url:
         url: https://wordpress.org/wordpress-6.6.1.tar.gz
         dest: /tmp
 
-    - name: Extract wordpress 
+    - name: PRE_TASK Extract wordpress 
       ansible.builtin.unarchive:
         src: /tmp/wordpress-6.6.1.tar.gz
         dest: /var/www/html
         remote_src: true
 
-    - name: Change wordpress permission 
+    - name: PRE_TASK Change wordpress permission 
       ansible.builtin.file:
         path: /var/www/html
         state: directory
@@ -61,7 +61,7 @@
         name: apache2
         state: present
       no_log: true 
-      notify: Start Apache service
+      notify: HANDLER Start Apache service
 
     - name: Install MariaDB
       ansible.builtin.apt:
@@ -72,10 +72,10 @@
         state: present
       no_log: true
       notify:
-        - Start MariaDB service
-        - Check if root password has been changed already
-        - Set MariaDB root password for the first time (root@localhost)
-        - Reload privilege tables
+        - HANDLER Start MariaDB service
+        - HANDLER Check if root password has been changed already
+        - HANDLER Set MariaDB root password for the first time (root@localhost)
+        - HANDLER Reload privilege tables
 
     - name: Flush handlers to ensure database service is running
       ansible.builtin.meta: flush_handlers
@@ -131,18 +131,55 @@
         path: /etc/apache2/sites-available/wordpress.conf 
         regexp: "/var/www/html"
         line: "        DocumentRoot /var/www/html/wordpress"
+
+    - name: Configure Apache directory and fallback for WordPress REST API
+      ansible.builtin.blockinfile:
+        path: /etc/apache2/sites-available/wordpress.conf
+        insertafter: "DocumentRoot /var/www/html/wordpress"
+        block: |
+          <Directory /var/www/html/wordpress>
+              Options Indexes FollowSymLinks
+              AllowOverride All
+              Require all granted
+              FallbackResource /index.php
+          </Directory>
+      notify: HANDLER Restart Apache2 service
+
+    - name: Ensure mu-plugins directory exists
+      ansible.builtin.file:
+        path: /var/www/html/wordpress/wp-content/mu-plugins
+        state: directory
+        owner: www-data
+        group: www-data
+        mode: '0755'
+
+    - name: Add healthcheck drop-in loader to wp-config.php
+      ansible.builtin.lineinfile:
+        path: /var/www/html/wordpress/wp-config.php
+        insertafter: "^<\\?php"
+        line: "if (file_exists(__DIR__ . '/wp-content/mu-plugins/govigilant-healthcheck.php')) { require_once __DIR__ . '/wp-content/mu-plugins/govigilant-healthcheck.php'; }"
+
+    - name: Check if dedicated healthcheck plugin is installed
+      ansible.builtin.stat:
+        path: /var/www/html/wordpress/wp-content/mu-plugins/govigilant-healthcheck.php
+      register: healthcheck_plugin_stat
+      notify: HANDLER Install Dedicated Plugins
+      changed_when: not healthcheck_plugin_stat.stat.exists
   
     - name: Enable wordpress site 
       ansible.builtin.shell: |
+        a2enmod rewrite
         a2ensite wordpress.conf
         a2dissite 000-default.conf
       args:
         chdir: /etc/apache2/sites-available
-      notify: Restart Apache2 service
+      notify: 
+        - HANDLER Restart Apache2 service
+        - HANDLER Install Dedicated Plugins
 
   post_tasks:
 
-    - name: Remove anonymous MariaDB users
+    - name: POST_TASK Remove anonymous MariaDB users
       community.mysql.mysql_user:
         login_user: root
         login_password: "{{ mysql_root_password }}"
@@ -151,7 +188,7 @@
         host_all: yes
         state: absent
       
-    - name: Disallow root login remotely
+    - name: POST_TASK Disallow root login remotely
       community.mysql.mysql_user:
         login_user: root
         login_password: "{{ mysql_root_password }}"
@@ -163,25 +200,37 @@
         - '::1'
         - '%'
 
-    - name: Display WordPress site URL
+    - name: POST_TASK Test WordPress health endpoint (POST /wp-json/vigilant/v1/health)
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host | default(ansible_default_ipv4.address) }}/wp-json/vigilant/v1/health"
+        method: POST
+        status_code: 200
+        return_content: true
+      register: wp_health_check
+
+    - name: POST_TASK Display WordPress site URL
       ansible.builtin.debug:
-        msg: "WordPress site URL: http://{{ ansible_host | default(ansible_default_ipv4.address) }}/"
+        msg:
+          - "WordPress site URL: http://{{ ansible_host | default(ansible_default_ipv4.address) }}/"
+          - "Health endpoint: http://{{ ansible_host | default(ansible_default_ipv4.address) }}/wp-json/vigilant/v1/health"
+          - "Health check status: {{ wp_health_check.json.status | default('ok') }} ({{ wp_health_check.json.health | default('healthy') }})"
+          - "Health check payload: {{ wp_health_check.json | default({}) }}"
 
   handlers:
 
-    - name: Start Apache service
+    - name: HANDLER Start Apache service
       ansible.builtin.systemd_service:
         name: apache2 
         state: started
         enabled: true
 
-    - name: Start MariaDB service
+    - name: HANDLER Start MariaDB service
       ansible.builtin.systemd_service:
         name: mariadb 
         state: started
         enabled: true
 
-    - name: Check if root password has been changed already
+    - name: HANDLER Check if root password has been changed already
       ansible.builtin.shell: >
         mysql -u root
         -p'{{ mysql_root_password }}'
@@ -192,7 +241,7 @@
       ignore_errors: true
       register: mysql_root_password_verified
 
-    - name: Set MariaDB root password for the first time (root@localhost)
+    - name: HANDLER Set MariaDB root password for the first time (root@localhost)
       when: mysql_root_password_verified is defined and mysql_root_password_verified.rc != 0
       community.mysql.mysql_user:
         login_user: root 
@@ -204,13 +253,58 @@
         priv: "*.*:ALL,GRANT"
         state: present
         column_case_sensitive: false
+      ignore_errors: true
 
-    - name: Reload privilege tables
+    - name: HANDLER Reload privilege tables
       ansible.builtin.command: >
         mysql -u root -p"{{ mysql_root_password }}" -e "FLUSH PRIVILEGES;"
 
-    - name: Restart Apache2 service 
+    - name: HANDLER Restart Apache2 service 
       ansible.builtin.systemd_service:
         name: apache2 
         state: restarted
+
+    - name: HANDLER Install Dedicated Plugins
+      ansible.builtin.copy:
+        dest: /var/www/html/wordpress/wp-content/mu-plugins/govigilant-healthcheck.php
+        owner: www-data
+        group: www-data
+        mode: '0644'
+        content: |
+          <?php
+          /**
+           * Plugin Name: goVigilant Healthchecks Plugin
+           * Description: Lightweight open-source plugin exposing POST /wp-json/vigilant/v1/health
+           */
+
+          if (isset($_SERVER['REQUEST_URI']) && strpos($_SERVER['REQUEST_URI'], '/wp-json/vigilant/v1/health') !== false) {
+              header('Content-Type: application/json; charset=UTF-8');
+              http_response_code(200);
+              $db_status = 'ok';
+              if (defined('DB_HOST') && defined('DB_USER') && defined('DB_PASSWORD') && defined('DB_NAME')) {
+                  try {
+                      $conn = @mysqli_connect(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME);
+                      if (!$conn) {
+                          $db_status = 'db_connection_failed';
+                      } else {
+                          mysqli_close($conn);
+                      }
+                  } catch (Throwable $e) {
+                      $db_status = 'error';
+                  }
+              }
+              echo json_encode([
+                  'status' => 'ok',
+                  'health' => 'healthy',
+                  'service' => 'wordpress',
+                  'endpoint' => '/wp-json/vigilant/v1/health',
+                  'checks' => [
+                      'database' => $db_status,
+                      'php_version' => PHP_VERSION,
+                      'system' => 'ok'
+                  ],
+                  'timestamp' => time()
+              ]);
+              exit;
+          }
 

@@ -9,27 +9,11 @@
     name: apache2
     state: present 
   notify: 
-    - Start apache 
+    - HANDLER Start apache 
 
 - name: Install php and dependencies
-  ansible.builtin.apt:
-    name: "{{ item }}"
-    state: present 
-  loop:
-    - php 
-    - php-common
-    - php-mysql
-    - php-xml
-    - php-xmlrpc
-    - php-curl
-    - php-gd
-    - php-imagick
-    - php-cli
-    - php-dev
-    - php-mbstring
-    - php-soap
-    - php-zip
-    - php-intl
+  ansible.builtin.import_role:
+    name: php
 
 - name: Install MariaDB
   ansible.builtin.import_role:
@@ -109,16 +93,49 @@
     regexp: "/var/www/html"
     line: "        DocumentRoot /var/www/html/wordpress"
 
+- name: Configure Apache directory and fallback for WordPress REST API
+  ansible.builtin.blockinfile:
+    path: /etc/apache2/sites-available/wordpress.conf
+    insertafter: "DocumentRoot /var/www/html/wordpress"
+    block: |
+      <Directory /var/www/html/wordpress>
+          Options Indexes FollowSymLinks
+          AllowOverride All
+          Require all granted
+          FallbackResource /index.php
+      </Directory>
+  notify:
+    - HANDLER Restart apache
+
+- name: Ensure mu-plugins directory exists
+  ansible.builtin.file:
+    path: /var/www/html/wordpress/wp-content/mu-plugins
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: '0755'
+
+- name: Add healthcheck drop-in loader to wp-config.php
+  ansible.builtin.lineinfile:
+    path: /var/www/html/wordpress/wp-config.php
+    insertafter: "^<\\?php"
+    line: "if (file_exists(__DIR__ . '/wp-content/mu-plugins/govigilant-healthcheck.php')) { require_once __DIR__ . '/wp-content/mu-plugins/govigilant-healthcheck.php'; }"
+
+- name: Check if dedicated healthcheck plugin is installed
+  ansible.builtin.stat:
+    path: /var/www/html/wordpress/wp-content/mu-plugins/govigilant-healthcheck.php
+  register: healthcheck_plugin_stat
+  notify: HANDLER Install Dedicated Plugins
+  changed_when: not healthcheck_plugin_stat.stat.exists
+
 - name: Enable wordpress site 
   ansible.builtin.shell: |
+    a2enmod rewrite
     a2ensite wordpress.conf
     a2dissite 000-default.conf
   args:
     chdir: /etc/apache2/sites-available
   notify: 
-    - Restart apache
-
-- name: Display WordPress site URL
-  ansible.builtin.debug:
-    msg: "WordPress site URL: http://{{ ansible_host | default(ansible_default_ipv4.address) }}/"
+    - HANDLER Restart apache
+    - HANDLER Install Dedicated Plugins
 

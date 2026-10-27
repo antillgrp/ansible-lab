@@ -16,8 +16,6 @@ Run from the repository root (`/home/toor/DEVOPS_DEV/ansible-lab`):
 
 - **Full deploy (launch VM on bridge, get IP, generate & copy SSH keys, update `inventory.ini`):**
   ```bash
-  make deploy
-  # or:
   ansible-playbook src/10_infra/00_vms.yaml -t "deploy"
   ```
 

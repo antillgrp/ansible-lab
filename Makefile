@@ -31,33 +31,18 @@ infra_destroy:
 	@ansible-playbook -v src/10_infra/00_vms.yaml -t "bridge_out"
 	@ansible-playbook -v src/10_infra/00_vms.yaml -t "destroy"
 
-wkload_deploy_no_roles:
-	@ansible-playbook -v -i inventory.ini src/20_deploy_no_roles/40_wkload_deploy.yaml
-
-wkload_deploy_roles:
-	@ansible-playbook -v -i inventory.ini src/30_deploy_with_roles/10_wordpressv2.yaml
-
-wpfacts:
+infra_facts:
 	@ansible-playbook -vvvvvv -i inventory.ini src/20_deploy_no_roles/40_wkload_deploy.yaml -t "facts"
 
-wpsetup:
+wkload_deploy_no_roles:
 	@ansible-playbook -v -i inventory.ini src/20_deploy_no_roles/40_wkload_deploy.yaml --skip-tags "facts"
 
-rancher_init:
-	sudo docker run -d --privileged --restart=unless-stopped -p 8080:80 -p 8443:443 --name rancher rancher/rancher:latest
+wkload_deploy_roles:
+	@ansible-playbook -v -i inventory.ini src/30_deploy_with_roles/10_wkload_deploy.yaml
 
-rancher_bootstrap_pass:
-	docker logs  rancher  2>&1 | grep "Bootstrap Password:"
-	# 2026/02/14 17:49:03 [INFO] Bootstrap Password: xtk8mbbsw82hhhz2w47qhmx47fg9vcln4glhxrp6k7d2ntbzh7pmmk [gvjqGGqGV7dXAR9A]
+# TODO : rancher_init:
+# 	sudo docker run -d --privileged --restart=unless-stopped -p 8080:80 -p 8443:443 --name rancher rancher/rancher:latest
 
-# A new API Key has been created
-# Access Key
-# token-jsbcn
-# Secret Key
-# cv4wlwt9wmqskmctjqr68vwfsf4qcz4fjznrqpr7cdrtfngcqwkj2p
-
-# Access Key and Secret Key can be sent as the username and password for HTTP Basic auth to authorize requests. You can also combine them to use as a Bearer token:
-# Bearer Token
-# token-jsbcn:cv4wlwt9wmqskmctjqr68vwfsf4qcz4fjznrqpr7cdrtfngcqwkj2p
-# Save the info above! This is the only time you'll be able to see it. If you lose it, you'll need to create a new API key.
-
+# TODO : rancher_bootstrap_pass:
+# 	docker logs  rancher  2>&1 | grep "Bootstrap Password:"
+# 	# 2026/02/14 17:49:03 [INFO] Bootstrap Password: xtk8mbbsw82hhhz2w47qhmx47fg9vcln4glhxrp6k7d2ntbzh7pmmk [gvjqGGqGV7dXAR9A]

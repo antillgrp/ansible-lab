@@ -80,7 +80,7 @@
       community.crypto.openssh_keypair:
         path: ~/.ssh/id_rsa
       register: ssh
-      notify: Sync public key to workspace .ssh directory for Multipass transfer
+      notify: HANDLER Sync public key to workspace .ssh directory for Multipass transfer
       changed_when: ssh.changed or not (playbook_dir ~ '/../../.ssh/id_rsa.pub') is file
       tags: deploy, create
 
@@ -141,7 +141,7 @@
       tags: deploy, create, bridge
 
   handlers:
-    - name: Sync public key to workspace .ssh directory for Multipass transfer
+    - name: HANDLER Sync public key to workspace .ssh directory for Multipass transfer
       block:
         - name: Ensure workspace .ssh directory exists
           ansible.builtin.file:

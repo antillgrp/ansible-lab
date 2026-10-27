@@ -1,12 +1,56 @@
 
-- name: Start apache
+- name: HANDLER Start apache
   ansible.builtin.systemd_service:
     name: apache2 
     state: started
     enabled: true
 
-- name: Restart apache 
+- name: HANDLER Restart apache 
   ansible.builtin.systemd_service:
     name: apache2 
     state: restarted
+
+- name: HANDLER Install Dedicated Plugins
+  ansible.builtin.copy:
+    dest: /var/www/html/wordpress/wp-content/mu-plugins/govigilant-healthcheck.php
+    owner: www-data
+    group: www-data
+    mode: '0644'
+    content: |
+      <?php
+      /**
+       * Plugin Name: goVigilant Healthchecks Plugin
+       * Description: Lightweight open-source plugin exposing POST /wp-json/vigilant/v1/health
+       */
+
+      if (isset($_SERVER['REQUEST_URI']) && strpos($_SERVER['REQUEST_URI'], '/wp-json/vigilant/v1/health') !== false) {
+          header('Content-Type: application/json; charset=UTF-8');
+          http_response_code(200);
+          $db_status = 'ok';
+          if (defined('DB_HOST') && defined('DB_USER') && defined('DB_PASSWORD') && defined('DB_NAME')) {
+              try {
+                  $conn = @mysqli_connect(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME);
+                  if (!$conn) {
+                      $db_status = 'db_connection_failed';
+                  } else {
+                      mysqli_close($conn);
+                  }
+              } catch (Throwable $e) {
+                  $db_status = 'error';
+              }
+          }
+          echo json_encode([
+              'status' => 'ok',
+              'health' => 'healthy',
+              'service' => 'wordpress',
+              'endpoint' => '/wp-json/vigilant/v1/health',
+              'checks' => [
+                  'database' => $db_status,
+                  'php_version' => PHP_VERSION,
+                  'system' => 'ok'
+              ],
+              'timestamp' => time()
+          ]);
+          exit;
+      }
 

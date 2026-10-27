@@ -1,0 +1,17 @@
+---
+php_packages:
+  - php
+  - php-common
+  - php-mysql
+  - php-xml
+  - php-xmlrpc
+  - php-curl
+  - php-gd
+  - php-imagick
+  - php-cli
+  - php-dev
+  - php-mbstring
+  - php-soap
+  - php-zip
+  - php-intl
+
